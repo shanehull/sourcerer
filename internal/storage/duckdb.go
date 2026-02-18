@@ -120,7 +120,7 @@ func (r *DuckDBRepo) ExportCSV(ctx context.Context, path string, minAge int, sta
 
 	query := fmt.Sprintf(`
 		COPY (
-			SELECT abn, name, category, sources, state, postcode, age_years, gst_registered, is_current_entity, acn, main_trading_name, phone, email, business_url, found_at_url 
+			SELECT abn, name, category, entity_type, entity_status, sources, state, postcode, registration_date, age_years, gst_registered, gst_effective_from, is_current_entity, acn, main_trading_name, phone, email, business_url, found_at_url, updated_at 
 			FROM leads 
 			WHERE %s 
 			ORDER BY registration_date ASC

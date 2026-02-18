@@ -36,6 +36,7 @@ func main() {
 	keywordsRaw := flag.String("keywords", "", "ABR search keywords")
 	outDir := flag.String("outdir", "out", "Output directory for CSV and database")
 	debug := flag.Bool("debug", false, "Enable debug logs")
+	exportOnly := flag.Bool("export-only", false, "Only export existing data, skip scraping")
 	flag.Parse()
 
 	// Ensure output directory exists
@@ -86,9 +87,22 @@ func main() {
 		os.Exit(1)
 	}
 	defer repo.Close()
-	repo.Init(context.Background())
+	ctx := context.Background()
+	repo.Init(ctx)
 
 	enricher := enrich.NewABRClient(apiKey, logger)
+
+	// Export-only mode: skip scraping and go straight to export
+	if *exportOnly {
+		logger.Info("Export-only mode enabled, exporting existing data")
+		requestedSources := strings.Split(strings.ToUpper(*sourcesFlag), ",")
+		if err := repo.ExportCSV(ctx, outPath, *targetAge, allowedStates, requestedSources); err != nil {
+			logger.Error("Export failed", "err", err)
+		} else {
+			logger.Info("Export successful", "path", outPath)
+		}
+		return
+	}
 
 	var sources []source.Sourcer
 	for _, s := range strings.Split(*sourcesFlag, ",") {
@@ -107,7 +121,6 @@ func main() {
 		}
 	}
 
-	ctx := context.Background()
 	// stats tracking
 	stats := struct{ Found, New, Updated, Skipped, Error int }{}
 
