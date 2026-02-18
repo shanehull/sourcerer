@@ -98,9 +98,9 @@ func main() {
 		case "amtil":
 			sources = append(sources, source.NewAMTILScraper(logger))
 		case "northlink":
-			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/manufacturer-directory/"))
-			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/service-provider-directory/"))
-			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-advanced-manufacturing-group/partner-directory/"))
+			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/manufacturer-directory/", "Manufacturing", "NorthLink-FoodMfg"))
+			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/service-provider-directory/", "Service Provider", "NorthLink-FoodSvc"))
+			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-advanced-manufacturing-group/partner-directory/", "Manufacturing", "NorthLink-MfgPartner"))
 		case "abr":
 			kws := strings.Split(*keywordsRaw, ",")
 			sources = append(sources, source.NewABRSearchSource(logger, enricher, kws))
@@ -138,7 +138,6 @@ func main() {
 					stats.Error++
 					continue
 				}
-				time.Sleep(500 * time.Millisecond)
 			}
 
 			// Core Filter Logic

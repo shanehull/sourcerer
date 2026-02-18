@@ -10,14 +10,18 @@ import (
 )
 
 type NorthLinkScraper struct {
-	logger   *slog.Logger
-	startURL string
+	logger    *slog.Logger
+	startURL  string
+	category  string
+	source    string
 }
 
-func NewNorthLinkScraper(logger *slog.Logger, url string) *NorthLinkScraper {
+func NewNorthLinkScraper(logger *slog.Logger, url, category, source string) *NorthLinkScraper {
 	return &NorthLinkScraper{
-		logger:   logger,
-		startURL: url,
+		logger:    logger,
+		startURL:  url,
+		category:  category,
+		source:    source,
 	}
 }
 
@@ -40,8 +44,8 @@ func (s *NorthLinkScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 		if name != "" && len(name) > 1 && !strings.EqualFold(name, "Manufacturers") && !strings.EqualFold(name, "Service Providers") {
 			leads = append(leads, model.Lead{
 				Name:       name,
-				Category:   "Service Provider/Manufacturing",
-				Sources:    []string{s.Name()},
+				Category:   s.category,
+				Sources:    []string{s.source},
 				FoundAtURL: website,
 			})
 		}
@@ -55,8 +59,8 @@ func (s *NorthLinkScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 			if len(name) > 3 && !strings.Contains(name, "(") { // Skip phone numbers
 				leads = append(leads, model.Lead{
 					Name:     name,
-					Category: "Service Provider/Manufacturing",
-					Sources:  []string{s.Name()},
+					Category: s.category,
+					Sources:  []string{s.source},
 				})
 			}
 		})

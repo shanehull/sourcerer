@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/gocolly/colly/v2"
 	"github.com/shanehull/sourcerer/internal/model"
@@ -52,8 +51,6 @@ func (s *AustMfgScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 
 		allLeads = append(allLeads, leads...)
 
-		// To be polite and avoid 429 Rate Limits
-		time.Sleep(500 * time.Millisecond)
 		currentPage++
 
 		// Safety break to prevent infinite loops during testing

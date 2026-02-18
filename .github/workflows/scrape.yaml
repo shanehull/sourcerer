@@ -10,7 +10,7 @@ on:
       age:
         description: 'Minimum business age (years)'
         required: true
-        default: '20'
+        default: '10'
       states:
         description: 'Allowed states (e.g., vic,nsw)'
         required: false

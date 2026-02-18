@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/shanehull/sourcerer/internal/enrich"
 	"github.com/shanehull/sourcerer/internal/model"
@@ -46,7 +45,6 @@ func (s *ABRSearchSource) Fetch(ctx context.Context) ([]model.Lead, error) {
 			continue
 		}
 		allLeads = append(allLeads, leads...)
-		time.Sleep(2 * time.Second)
 	}
 	return allLeads, nil
 }
