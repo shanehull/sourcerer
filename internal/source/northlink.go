@@ -25,7 +25,7 @@ func NewNorthLinkScraper(logger *slog.Logger, url, category, source string) *Nor
 	}
 }
 
-func (s *NorthLinkScraper) Name() string { return "NorthLink" }
+func (s *NorthLinkScraper) Name() string { return s.source }
 
 func (s *NorthLinkScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 	var leads []model.Lead
@@ -35,35 +35,23 @@ func (s *NorthLinkScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"),
 	)
 
-	// TARGET: The Elementor Heading Widget which contains the company name and link
+	// TARGET: Only company headings that have both a title AND a link
+	// This filters out page headings like "Partnering with the Best..." which don't link to companies
 	c.OnHTML(".elementor-widget-heading", func(e *colly.HTMLElement) {
-		name := strings.TrimSpace(e.ChildText(".elementor-heading-title"))
-		website := e.ChildAttr(".elementor-heading-title a", "href")
+		title := e.ChildAttr(".elementor-heading-title a", "href")
+		name := strings.TrimSpace(e.ChildText(".elementor-heading-title a"))
 
-		// Validation to ensure we have a name and it's not a generic page heading
-		if name != "" && len(name) > 1 && !strings.EqualFold(name, "Manufacturers") && !strings.EqualFold(name, "Service Providers") {
+		// Only process if we have BOTH a name AND a URL link
+		// Page headings won't have links, only company entries do
+		if name != "" && len(name) > 2 && title != "" {
 			leads = append(leads, model.Lead{
-				Name:       name,
-				Category:   s.category,
-				Sources:    []string{s.source},
-				FoundAtURL: website,
+				Name:        name,
+				Category:    s.category,
+				Sources:     []string{s.source},
+				BusinessURL: title,
+				FoundAtURL:  e.Request.URL.String(),
 			})
 		}
-	})
-
-	// FALLBACK: If names are in the text editor widget instead of headings
-	c.OnHTML(".elementor-widget-text-editor", func(e *colly.HTMLElement) {
-		// Only grab bold text if we haven't already filled our leads (safety)
-		e.ForEach("p strong", func(_ int, el *colly.HTMLElement) {
-			name := strings.TrimSpace(el.Text)
-			if len(name) > 3 && !strings.Contains(name, "(") { // Skip phone numbers
-				leads = append(leads, model.Lead{
-					Name:     name,
-					Category: s.category,
-					Sources:  []string{s.source},
-				})
-			}
-		})
 	})
 
 	s.logger.Info("Starting NorthLink Scrape", "url", s.startURL)

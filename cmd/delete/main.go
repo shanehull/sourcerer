@@ -75,11 +75,15 @@ func main() {
 		os.Exit(0)
 	}
 
-	err = repo.DeleteLeadByFilters(ctx, filters)
+	rowsDeleted, err := repo.DeleteLeadByFilters(ctx, filters)
 	if err != nil {
 		logger.Error("Delete failed", "filters", filters, "err", err)
 		os.Exit(1)
 	}
 
-	logger.Info("Deleted successfully", "filters", filters)
+	if rowsDeleted == 0 {
+		logger.Warn("No records matched the filters", "filters", filters)
+	} else {
+		logger.Info("Deleted successfully", "filters", filters, "rows_deleted", rowsDeleted)
+	}
 }

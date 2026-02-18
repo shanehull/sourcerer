@@ -135,6 +135,7 @@ func main() {
 			} else {
 				// Enrich all leads (ABR-Search has ABN, others lookup by name)
 				if err := enricher.Enrich(ctx, &lead); err != nil {
+					srcLogger.Error("Enrichment failed", "name", lead.Name, "abn", lead.ABN, "err", err)
 					stats.Error++
 					continue
 				}

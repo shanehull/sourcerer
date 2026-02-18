@@ -16,7 +16,14 @@ type Lead struct {
 	Postcode         string
 	RegistrationDate time.Time
 	IsGSTRegistered  bool
-	FoundAtURL       string
+	ACN              string    // ASIC number
+	GSTEffectiveFrom time.Time // When GST registration became effective
+	IsCurrentEntity  bool      // Whether entity is current/active
+	MainTradingName  string    // How they market themselves
+	Phone            string    // Contact phone
+	Email            string    // Contact email
+	BusinessURL      string    // Actual business website URL
+	FoundAtURL       string    // URL where we found the lead (e.g., northlink.org.au/...)
 	EnrichmentError  error
 }
 

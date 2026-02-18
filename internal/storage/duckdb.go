@@ -37,7 +37,15 @@ func (r *DuckDBRepo) Init(ctx context.Context) error {
 		state TEXT,
 		postcode TEXT,
 		registration_date TIMESTAMP,
+		age_years INTEGER,
 		gst_registered BOOLEAN,
+		gst_effective_from TIMESTAMP,
+		is_current_entity BOOLEAN,
+		acn TEXT,
+		main_trading_name TEXT,
+		phone TEXT,
+		email TEXT,
+		business_url TEXT,
 		found_at_url TEXT,
 		updated_at TIMESTAMP
 	);`
@@ -67,14 +75,25 @@ func (r *DuckDBRepo) SaveLead(ctx context.Context, l model.Lead) (bool, error) {
 	_ = r.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM leads WHERE abn = ?)", l.ABN).Scan(&exists)
 
 	sourceStr := strings.Join(l.Sources, ",")
+	ageYears := l.AgeYears()
+	
 	query := `
-	INSERT INTO leads (abn, name, category, sources, entity_type, entity_status, state, postcode, registration_date, gst_registered, found_at_url, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO leads (abn, name, category, sources, entity_type, entity_status, state, postcode, registration_date, age_years, gst_registered, gst_effective_from, is_current_entity, acn, main_trading_name, phone, email, business_url, found_at_url, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT (abn) DO UPDATE SET
 		sources = CASE WHEN CONTAINS(leads.sources, EXCLUDED.sources) THEN leads.sources ELSE leads.sources || ',' || EXCLUDED.sources END,
+		age_years = EXCLUDED.age_years,
+		gst_registered = EXCLUDED.gst_registered,
+		gst_effective_from = EXCLUDED.gst_effective_from,
+		is_current_entity = EXCLUDED.is_current_entity,
+		acn = EXCLUDED.acn,
+		main_trading_name = EXCLUDED.main_trading_name,
+		phone = EXCLUDED.phone,
+		email = EXCLUDED.email,
+		business_url = EXCLUDED.business_url,
 		updated_at = EXCLUDED.updated_at;`
 
-	_, err := r.db.ExecContext(ctx, query, l.ABN, l.Name, l.Category, sourceStr, l.EntityType, l.EntityStatus, l.State, l.Postcode, l.RegistrationDate, l.IsGSTRegistered, l.FoundAtURL, time.Now())
+	_, err := r.db.ExecContext(ctx, query, l.ABN, l.Name, l.Category, sourceStr, l.EntityType, l.EntityStatus, l.State, l.Postcode, l.RegistrationDate, ageYears, l.IsGSTRegistered, l.GSTEffectiveFrom, l.IsCurrentEntity, l.ACN, l.MainTradingName, l.Phone, l.Email, l.BusinessURL, l.FoundAtURL, time.Now())
 	return !exists, err
 }
 
@@ -101,7 +120,7 @@ func (r *DuckDBRepo) ExportCSV(ctx context.Context, path string, minAge int, sta
 
 	query := fmt.Sprintf(`
 		COPY (
-			SELECT abn, name, category, sources, state, postcode, registration_date, found_at_url 
+			SELECT abn, name, category, sources, state, postcode, age_years, gst_registered, is_current_entity, acn, main_trading_name, phone, email, business_url, found_at_url 
 			FROM leads 
 			WHERE %s 
 			ORDER BY registration_date ASC
@@ -117,7 +136,7 @@ func (r *DuckDBRepo) DeleteLeadByName(ctx context.Context, name string) error {
 	return err
 }
 
-func (r *DuckDBRepo) DeleteLeadByFilters(ctx context.Context, filters map[string]interface{}) error {
+func (r *DuckDBRepo) DeleteLeadByFilters(ctx context.Context, filters map[string]interface{}) (int64, error) {
 	var conditions []string
 	var args []interface{}
 
@@ -143,12 +162,17 @@ func (r *DuckDBRepo) DeleteLeadByFilters(ctx context.Context, filters map[string
 	}
 
 	if len(conditions) == 0 {
-		return fmt.Errorf("no filters provided")
+		return 0, fmt.Errorf("no filters provided")
 	}
 
 	query := fmt.Sprintf("DELETE FROM leads WHERE %s", strings.Join(conditions, " AND "))
-	_, err := r.db.ExecContext(ctx, query, args...)
-	return err
+	result, err := r.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	return rowsAffected, err
 }
 
 func (r *DuckDBRepo) Close() error {

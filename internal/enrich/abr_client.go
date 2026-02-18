@@ -108,9 +108,14 @@ func (c *ABRClient) Enrich(ctx context.Context, l *model.Lead) error {
 	if l.ABN == "" {
 		results, err := c.SearchByName(ctx, l.Name)
 		if err != nil || len(results) == 0 {
+			// Can't enrich without ABN - skip this lead
 			return fmt.Errorf("no ABN found for %s", l.Name)
 		}
 		l.ABN = results[0].ABN
+		if l.ABN == "" {
+			// ABN was empty in results - skip
+			return fmt.Errorf("no valid ABN found for %s", l.Name)
+		}
 	}
 
 	// Using the latest endpoint
@@ -154,6 +159,24 @@ func (c *ABRClient) Enrich(ctx context.Context, l *model.Lead) error {
 				foundData = true
 			case "entitystatuscode":
 				decoder.DecodeElement(&l.EntityStatus, &se)
+			case "iscurrentindicator":
+				var current string
+				decoder.DecodeElement(&current, &se)
+				l.IsCurrentEntity = strings.EqualFold(current, "Y")
+			case "asicnumber":
+				decoder.DecodeElement(&l.ACN, &se)
+			case "organisationname":
+				if l.MainTradingName == "" {
+					decoder.DecodeElement(&l.MainTradingName, &se)
+				}
+			case "contactphonenumber":
+				if l.Phone == "" {
+					decoder.DecodeElement(&l.Phone, &se)
+				}
+			case "contactemail":
+				if l.Email == "" {
+					decoder.DecodeElement(&l.Email, &se)
+				}
 			case "goodsandservicestax":
 				var gst struct {
 					EffectiveFrom string `xml:"effectiveFrom"`
@@ -162,6 +185,7 @@ func (c *ABRClient) Enrich(ctx context.Context, l *model.Lead) error {
 				if err := decoder.DecodeElement(&gst, &se); err == nil {
 					if gst.EffectiveFrom != "" && (gst.EffectiveTo == "" || gst.EffectiveTo == "0001-01-01") {
 						l.IsGSTRegistered = true
+						l.GSTEffectiveFrom, _ = time.Parse("2006-01-02", gst.EffectiveFrom)
 					}
 				}
 			case "effectivefrom":
