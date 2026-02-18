@@ -64,6 +64,10 @@ func (l *Lead) IsPrivateEntity() bool {
 		return false
 	}
 
+	if strings.Contains(lowerType, "trust") {
+		return false
+	}
+
 	return true
 }
 
