@@ -183,7 +183,7 @@ func (c *ABRClient) Enrich(ctx context.Context, l *model.Lead) error {
 					EffectiveTo   string `xml:"effectiveTo"`
 				}
 				if err := decoder.DecodeElement(&gst, &se); err == nil {
-					if gst.EffectiveFrom != "" && (gst.EffectiveTo == "" || gst.EffectiveTo == "0001-01-01") {
+					if gst.EffectiveFrom != "" && gst.EffectiveFrom != "0001-01-01" && (gst.EffectiveTo == "" || gst.EffectiveTo == "0001-01-01") {
 						l.IsGSTRegistered = true
 						l.GSTEffectiveFrom, _ = time.Parse("2006-01-02", gst.EffectiveFrom)
 					}

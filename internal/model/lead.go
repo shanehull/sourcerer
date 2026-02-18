@@ -60,6 +60,10 @@ func (l *Lead) IsPrivateEntity() bool {
 		return false
 	}
 
+	if strings.Contains(lowerType, "other incorporated entity") {
+		return false
+	}
+
 	return true
 }
 
