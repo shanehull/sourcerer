@@ -1,0 +1,60 @@
+name: Lead Scraper Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: 'Sources to scrape (comma-separated)'
+        required: true
+        default: 'rto,amtil,northlink,abr'
+      age:
+        description: 'Minimum business age (years)'
+        required: true
+        default: '20'
+      states:
+        description: 'Allowed states (e.g., vic,nsw)'
+        required: false
+        default: 'vic,nsw,sa'
+      keywords:
+        description: 'ABR keywords (comma-separated)'
+        required: false
+        default: 'telemetry,automation,embedded,modelling,modeling,systems,platform'
+      postcodes:
+        description: 'Allowed postcode ranges (e.g., 3000-3999)'
+        required: false
+        default: ''
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install Dependencies
+        run: go mod download
+
+      - name: Run Scraper
+        env:
+          ABR_GUID: ${{ secrets.ABR_GUID }}
+        run: |
+          go run ./cmd/sourcerer \
+            --sources=${{ github.event.inputs.sources }} \
+            --age=${{ github.event.inputs.age }} \
+            --states=${{ github.event.inputs.states }} \
+            --keywords=${{ github.event.inputs.keywords }} \
+            --postcodes=${{ github.event.inputs.postcodes }} \
+            --outdir=out
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: lead-export-${{ github.event.inputs.sources }}-${{ github.run_id }}
+          path: out/
+          retention-days: 7
