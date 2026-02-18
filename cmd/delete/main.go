@@ -17,13 +17,14 @@ func main() {
 	abn := flag.String("abn", "", "Lead ABN to delete")
 	age := flag.Int("age", 0, "Lead age in years (for matching)")
 	source := flag.String("source", "", "Lead source (for matching)")
+	entityType := flag.String("entity-type", "", "Lead entity type (for matching)")
 	dbPath := flag.String("db", "out/sourcing.duckdb", "Path to DuckDB file")
 	flag.Parse()
 
 	// Check if at least one filter flag was explicitly provided
 	hasFilters := false
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "name" || f.Name == "abn" || f.Name == "age" || f.Name == "source" {
+		if f.Name == "name" || f.Name == "abn" || f.Name == "age" || f.Name == "source" || f.Name == "entity-type" {
 			hasFilters = true
 		}
 	})
@@ -57,6 +58,8 @@ func main() {
 			}
 		case "source":
 			filters["source"] = *source
+		case "entity-type":
+			filters["entity_type"] = *entityType
 		}
 	})
 

@@ -161,6 +161,11 @@ func (r *DuckDBRepo) DeleteLeadByFilters(ctx context.Context, filters map[string
 		conditions = append(conditions, fmt.Sprintf("contains(upper(sources), '%s')", strings.ToUpper(source)))
 	}
 
+	if entityType, ok := filters["entity_type"].(string); ok && entityType != "" {
+		conditions = append(conditions, "lower(entity_type) LIKE ?")
+		args = append(args, "%"+strings.ToLower(entityType)+"%")
+	}
+
 	if len(conditions) == 0 {
 		return 0, fmt.Errorf("no filters provided")
 	}

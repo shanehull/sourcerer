@@ -56,6 +56,10 @@ func (l *Lead) IsPrivateEntity() bool {
 		return false
 	}
 
+	if strings.Contains(lowerType, "sole trader") || strings.Contains(lowerType, "individual") {
+		return false
+	}
+
 	return true
 }
 
