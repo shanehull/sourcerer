@@ -24,8 +24,8 @@ func NewABRClient(guid string, logger *slog.Logger) *ABRClient {
 }
 
 func (c *ABRClient) SearchByName(ctx context.Context, keyword string) ([]model.Lead, error) {
-	// (SearchByName logic remains unchanged as it works fine)
 	apiURL := "https://abr.business.gov.au/abrxmlsearch/ABRXMLSearch.asmx/ABRSearchByNameAdvancedSimpleProtocol2017"
+
 	params := url.Values{}
 	params.Set("authenticationGuid", c.guid)
 	params.Set("name", keyword)
@@ -54,6 +54,7 @@ func (c *ABRClient) SearchByName(ctx context.Context, keyword string) ([]model.L
 
 	var leads []model.Lead
 	decoder := xml.NewDecoder(resp.Body)
+
 	for {
 		t, err := decoder.Token()
 		if err == io.EOF {
@@ -62,6 +63,7 @@ func (c *ABRClient) SearchByName(ctx context.Context, keyword string) ([]model.L
 		if err != nil {
 			return nil, err
 		}
+
 		switch se := t.(type) {
 		case xml.StartElement:
 			if strings.EqualFold(se.Name.Local, "searchResultsRecord") {
@@ -84,6 +86,7 @@ func (c *ABRClient) SearchByName(ctx context.Context, keyword string) ([]model.L
 					if name == "" {
 						name = record.BusinessName.OrganisationName
 					}
+
 					if record.ABN.IdentifierValue != "" {
 						leads = append(leads, model.Lead{
 							ABN:     record.ABN.IdentifierValue,
@@ -96,18 +99,27 @@ func (c *ABRClient) SearchByName(ctx context.Context, keyword string) ([]model.L
 			}
 		}
 	}
-	c.logger.Info("ABR Search Results", "keyword", keyword, "found", len(leads))
+	c.logger.Debug("ABN name lookup results", "name", keyword, "found", len(leads))
 	return leads, nil
 }
 
 func (c *ABRClient) Enrich(ctx context.Context, l *model.Lead) error {
+	// If no ABN, look it up by name
+	if l.ABN == "" {
+		results, err := c.SearchByName(ctx, l.Name)
+		if err != nil || len(results) == 0 {
+			return fmt.Errorf("no ABN found for %s", l.Name)
+		}
+		l.ABN = results[0].ABN
+	}
+
+	// Using the latest endpoint
 	apiURL := "https://abr.business.gov.au/abrxmlsearch/ABRXMLSearch.asmx/SearchByABNv202001"
 
-	cleanABN := strings.ReplaceAll(l.ABN, " ", "")
 	params := url.Values{}
-	params.Set("searchString", cleanABN)
-	params.Set("includeHistoricalDetails", "N")
 	params.Set("authenticationGuid", c.guid)
+	params.Set("searchString", l.ABN)
+	params.Set("includeHistoricalDetails", "N")
 
 	fullURL := apiURL + "?" + params.Encode()
 	resp, err := http.Get(fullURL)
@@ -116,12 +128,14 @@ func (c *ABRClient) Enrich(ctx context.Context, l *model.Lead) error {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
 	decoder := xml.NewDecoder(strings.NewReader(string(body)))
 	foundData := false
 
-	// The logic here is now "greedy". We don't care about the wrapper.
-	// We just want to find these tags WHEREVER they appear in the stream.
 	for {
 		t, err := decoder.Token()
 		if err == io.EOF {
@@ -134,8 +148,6 @@ func (c *ABRClient) Enrich(ctx context.Context, l *model.Lead) error {
 		switch se := t.(type) {
 		case xml.StartElement:
 			tagName := strings.ToLower(se.Name.Local)
-
-			// ABR can return these tags at different depths.
 			switch tagName {
 			case "entitydescription":
 				decoder.DecodeElement(&l.EntityType, &se)
@@ -143,19 +155,16 @@ func (c *ABRClient) Enrich(ctx context.Context, l *model.Lead) error {
 			case "entitystatuscode":
 				decoder.DecodeElement(&l.EntityStatus, &se)
 			case "goodsandservicestax":
-				// GST element exists if active (has effectiveFrom without effectiveTo)
 				var gst struct {
 					EffectiveFrom string `xml:"effectiveFrom"`
 					EffectiveTo   string `xml:"effectiveTo"`
 				}
 				if err := decoder.DecodeElement(&gst, &se); err == nil {
-					if gst.EffectiveFrom != "" && gst.EffectiveTo == "0001-01-01" {
+					if gst.EffectiveFrom != "" && (gst.EffectiveTo == "" || gst.EffectiveTo == "0001-01-01") {
 						l.IsGSTRegistered = true
 					}
 				}
 			case "effectivefrom":
-				// This catches registration dates.
-				// We only take the first one we find to avoid historical noise.
 				if l.RegistrationDate.IsZero() {
 					var dateStr string
 					decoder.DecodeElement(&dateStr, &se)
@@ -180,8 +189,8 @@ func (c *ABRClient) Enrich(ctx context.Context, l *model.Lead) error {
 		if len(snippet) > 500 {
 			snippet = snippet[:500]
 		}
-		c.logger.Error("Enrichment missed data", "abn", cleanABN, "resp_snippet", snippet)
-		return fmt.Errorf("no business data found for ABN %s", cleanABN)
+		c.logger.Error("Enrichment missed data", "abn", l.ABN, "resp", snippet)
+		return fmt.Errorf("no business data found for ABN %s", l.ABN)
 	}
 	return nil
 }

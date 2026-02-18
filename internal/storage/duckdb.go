@@ -111,6 +111,46 @@ func (r *DuckDBRepo) ExportCSV(ctx context.Context, path string, minAge int, sta
 	return err
 }
 
+func (r *DuckDBRepo) DeleteLeadByName(ctx context.Context, name string) error {
+	query := `DELETE FROM leads WHERE lower(name) = ?`
+	_, err := r.db.ExecContext(ctx, query, strings.ToLower(name))
+	return err
+}
+
+func (r *DuckDBRepo) DeleteLeadByFilters(ctx context.Context, filters map[string]interface{}) error {
+	var conditions []string
+	var args []interface{}
+
+	if name, ok := filters["name"].(string); ok {
+		conditions = append(conditions, "lower(name) = ?")
+		args = append(args, strings.ToLower(name))
+	}
+
+	if abn, ok := filters["abn"].(string); ok {
+		conditions = append(conditions, "abn = ?")
+		args = append(args, abn)
+	}
+
+	if age, ok := filters["age"].(int); ok && age > 0 {
+		cutoff := time.Now().AddDate(-age, 0, 0)
+		nextYear := time.Now().AddDate(-age+1, 0, 0)
+		conditions = append(conditions, "registration_date >= ? AND registration_date < ?")
+		args = append(args, cutoff, nextYear)
+	}
+
+	if source, ok := filters["source"].(string); ok && source != "" {
+		conditions = append(conditions, fmt.Sprintf("contains(upper(sources), '%s')", strings.ToUpper(source)))
+	}
+
+	if len(conditions) == 0 {
+		return fmt.Errorf("no filters provided")
+	}
+
+	query := fmt.Sprintf("DELETE FROM leads WHERE %s", strings.Join(conditions, " AND "))
+	_, err := r.db.ExecContext(ctx, query, args...)
+	return err
+}
+
 func (r *DuckDBRepo) Close() error {
 	return r.db.Close()
 }

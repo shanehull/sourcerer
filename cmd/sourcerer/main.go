@@ -20,7 +20,8 @@ import (
 func generateCSVPath(sources, states string, age int, outDir string) string {
 	filename := fmt.Sprintf("sources-%s-min-age-%d", sources, age)
 	if states != "" {
-		filename += "-states-" + states
+		statesHyphenated := strings.ReplaceAll(states, ",", "-")
+		filename += "-states-" + statesHyphenated
 	}
 	filename += "-" + time.Now().Format("20060102") + ".csv"
 	return filepath.Join(outDir, filename)
@@ -74,6 +75,11 @@ func main() {
 	}
 
 	apiKey := os.Getenv("ABR_GUID")
+	if apiKey == "" {
+		logger.Error("ABR_GUID environment variable not set")
+		os.Exit(1)
+	}
+
 	repo, err := storage.NewDuckDBRepo(*dbPath, logger)
 	if err != nil {
 		logger.Error("DB connection failed", "err", err)
@@ -93,6 +99,8 @@ func main() {
 			sources = append(sources, source.NewAMTILScraper(logger))
 		case "northlink":
 			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/manufacturer-directory/"))
+			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/service-provider-directory/"))
+			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-advanced-manufacturing-group/partner-directory/"))
 		case "abr":
 			kws := strings.Split(*keywordsRaw, ",")
 			sources = append(sources, source.NewABRSearchSource(logger, enricher, kws))
@@ -114,20 +122,23 @@ func main() {
 		for _, lead := range leads {
 			stats.Found++
 
+			// Skip leads without names
+			if lead.Name == "" {
+				stats.Skipped++
+				continue
+			}
+
 			// Check Cache
 			existing, _ := repo.GetLeadByName(ctx, lead.Name)
 			if existing != nil {
 				lead = *existing
 			} else {
-				// Only enrich if we have an ABN
-				if lead.ABN != "" {
-					// Enrich
-					if err := enricher.Enrich(ctx, &lead); err != nil {
-						stats.Error++
-						continue
-					}
-					time.Sleep(500 * time.Millisecond)
+				// Enrich all leads (ABR-Search has ABN, others lookup by name)
+				if err := enricher.Enrich(ctx, &lead); err != nil {
+					stats.Error++
+					continue
 				}
+				time.Sleep(500 * time.Millisecond)
 			}
 
 			// Core Filter Logic
