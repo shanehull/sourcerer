@@ -22,7 +22,7 @@ func generateCSVPath(sources, states string, age int, outDir string) string {
 	if states != "" {
 		filename += "-states-" + states
 	}
-	filename += "-" + time.Now().Format("20060102-1504") + ".csv"
+	filename += "-" + time.Now().Format("20060102") + ".csv"
 	return filepath.Join(outDir, filename)
 }
 
@@ -38,7 +38,7 @@ func main() {
 	flag.Parse()
 
 	// Ensure output directory exists
-	if err := os.MkdirAll(*outDir, 0755); err != nil {
+	if err := os.MkdirAll(*outDir, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
 		os.Exit(1)
 	}
