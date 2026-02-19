@@ -19,7 +19,7 @@ type SEMMAScraper struct {
 func NewSEMMAScraper(logger *slog.Logger) *SEMMAScraper {
 	return &SEMMAScraper{
 		logger:   logger,
-		startURL: "https://semma.com.au/members-directory/",
+		startURL: "https://semma.com.au/directory/",
 	}
 }
 
@@ -56,6 +56,20 @@ func (s *SEMMAScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 				FoundAtURL: e.Request.URL.String(),
 			})
 		}
+	})
+
+	// Handle pagination - follow next page link
+	c.OnHTML("a.nav-next", func(e *colly.HTMLElement) {
+		nextURL := e.Attr("href")
+		if nextURL != "" {
+			s.logger.Info("Following pagination", "url", nextURL)
+			c.Visit(nextURL)
+		}
+	})
+	
+	// Debug: log when we find paginator elements
+	c.OnHTML("div.paginator", func(e *colly.HTMLElement) {
+		s.logger.Debug("Found paginator on page", "url", e.Request.URL)
 	})
 
 	var scrapeErr error
