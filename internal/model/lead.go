@@ -72,6 +72,16 @@ func (l *Lead) IsPrivateEntity() bool {
 }
 
 func (l *Lead) IsInvestable(allowedStates []string, allowedPostcodes []PostcodeRange) bool {
+	// Skip if not a current entity
+	if !l.IsCurrentEntity {
+		return false
+	}
+	
+	// Skip if GST effective date is zero/unset
+	if l.GSTEffectiveFrom.Year() == 1 {
+		return false
+	}
+	
 	if len(allowedStates) > 0 {
 		found := false
 		for _, s := range allowedStates {
