@@ -73,7 +73,7 @@ func (s *AMTILScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 		}
 	})
 
-	s.logger.Info("Warming up session...", "ua", ua)
+	s.logger.Info("Warming up AMTIL session...", "ua", ua)
 	_ = c.Visit("https://amtil.com.au/")
 
 	if err := c.Visit(s.startURL); err != nil {

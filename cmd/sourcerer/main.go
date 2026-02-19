@@ -32,7 +32,7 @@ func main() {
 	dbPath := flag.String("db", "out/sourcing.duckdb", "Path to DuckDB file")
 	statesRaw := flag.String("states", "", "States filter (comma-separated)")
 	postcodesRaw := flag.String("postcodes", "", "Postcode ranges")
-	sourcesFlag := flag.String("sources", "rto,amtil,northlink,abr", "Sources to run")
+	sourcesFlag := flag.String("sources", "rto,amtil,semma,northlink,abr", "Sources to run")
 	keywordsRaw := flag.String("keywords", "", "ABR search keywords")
 	outDir := flag.String("outdir", "out", "Output directory for CSV and database")
 	debug := flag.Bool("debug", false, "Enable debug logs")
@@ -111,6 +111,8 @@ func main() {
 			sources = append(sources, source.NewRTOScraper(logger))
 		case "amtil":
 			sources = append(sources, source.NewAMTILScraper(logger))
+		case "semma":
+			sources = append(sources, source.NewSEMMAScraper(logger))
 		case "northlink":
 			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/manufacturer-directory/", "Manufacturing", "NorthLink-FoodMfg"))
 			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/service-provider-directory/", "Service Provider", "NorthLink-FoodSvc"))

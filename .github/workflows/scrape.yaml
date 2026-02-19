@@ -6,7 +6,7 @@ on:
       sources:
         description: 'Sources to scrape (comma-separated)'
         required: true
-        default: 'rto,amtil,northlink,abr'
+        default: 'rto,amtil,semma,northlink,abr'
       age:
         description: 'Minimum business age (years)'
         required: true
