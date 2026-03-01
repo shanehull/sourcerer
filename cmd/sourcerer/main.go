@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shanehull/sourcerer/internal/enrich"
@@ -25,6 +26,30 @@ func generateCSVPath(sources, states string, age int, outDir string) string {
 	}
 	filename += "-" + time.Now().Format("20060102") + ".csv"
 	return filepath.Join(outDir, filename)
+}
+
+type stats struct {
+	Found, New, Updated, Skipped, Selected, Error int
+	mu                                            sync.Mutex
+}
+
+func (s *stats) incr(field string, n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch field {
+	case "Found":
+		s.Found += n
+	case "New":
+		s.New += n
+	case "Updated":
+		s.Updated += n
+	case "Skipped":
+		s.Skipped += n
+	case "Selected":
+		s.Selected += n
+	case "Error":
+		s.Error += n
+	}
 }
 
 func main() {
@@ -56,7 +81,7 @@ func main() {
 	if *debug {
 		logLevel = slog.LevelDebug
 	}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 
 	var allowedStates []string
 	if *statesRaw != "" {
@@ -106,40 +131,80 @@ func main() {
 
 	var sources []source.Sourcer
 	for _, s := range strings.Split(*sourcesFlag, ",") {
-		switch strings.TrimSpace(strings.ToLower(s)) {
+		s := strings.TrimSpace(strings.ToLower(s))
+		switch s {
 		case "rto":
-			sources = append(sources, source.NewRTOScraper(logger))
+			srcLogger := logger.With("source", "RTO")
+			sources = append(sources, source.NewRTOScraper(srcLogger))
 		case "amtil":
-			sources = append(sources, source.NewAMTILScraper(logger))
+			srcLogger := logger.With("source", "AMTIL")
+			sources = append(sources, source.NewAMTILScraper(srcLogger))
 		case "semma":
-			sources = append(sources, source.NewSEMMAScraper(logger))
+			srcLogger := logger.With("source", "SEMMA")
+			sources = append(sources, source.NewSEMMAScraper(srcLogger))
 		case "northlink":
-			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/manufacturer-directory/", "Manufacturing", "NorthLink-FoodMfg"))
-			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-food-group/service-provider-directory/", "Service Provider", "NorthLink-FoodSvc"))
-			sources = append(sources, source.NewNorthLinkScraper(logger, "https://northlink.org.au/melbournes-north-advanced-manufacturing-group/partner-directory/", "Manufacturing", "NorthLink-MfgPartner"))
+			for _, spec := range []struct {
+				url  string
+				cat  string
+				name string
+			}{
+				{"https://northlink.org.au/melbournes-north-food-group/manufacturer-directory/", "Manufacturing", "NorthLink-FoodMfg"},
+				{"https://northlink.org.au/melbournes-north-food-group/service-provider-directory/", "Service Provider", "NorthLink-FoodSvc"},
+				{"https://northlink.org.au/melbournes-north-advanced-manufacturing-group/partner-directory/", "Manufacturing", "NorthLink-MfgPartner"},
+			} {
+				srcLogger := logger.With("source", spec.name)
+				sources = append(sources, source.NewNorthLinkScraper(srcLogger, spec.url, spec.cat, spec.name))
+			}
 		case "abr":
+			srcLogger := logger.With("source", "ABR")
 			kws := strings.Split(*keywordsRaw, ",")
-			sources = append(sources, source.NewABRSearchSource(logger, enricher, kws))
+			sources = append(sources, source.NewABRSearchSource(srcLogger, enricher, kws))
 		}
 	}
 
-	// stats tracking
-	stats := struct{ Found, New, Updated, Skipped, Error int }{}
+	// Fetch all sources concurrently
+	s := &stats{}
+	type fetchResult struct {
+		source source.Sourcer
+		leads  []model.Lead
+		err    error
+	}
+	resultsChan := make(chan fetchResult, len(sources))
 
+	var wg sync.WaitGroup
 	for _, src := range sources {
-		srcLogger := logger.With("source", src.Name())
-		leads, err := src.Fetch(ctx)
-		if err != nil {
-			srcLogger.Error("Fetch failed", "err", err)
+		wg.Add(1)
+		go func(src source.Sourcer) {
+			defer wg.Done()
+			srcLogger := logger.With("source", src.Name())
+			leads, err := src.Fetch(ctx)
+			if err != nil {
+				srcLogger.Error("Fetch failed", "err", err)
+				resultsChan <- fetchResult{source: src, err: err}
+				return
+			}
+			resultsChan <- fetchResult{source: src, leads: leads}
+		}(src)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	// Process results as they come in
+	for result := range resultsChan {
+		if result.err != nil {
 			continue
 		}
 
-		for _, lead := range leads {
-			stats.Found++
+		srcLogger := logger.With("source", result.source.Name())
+		for _, lead := range result.leads {
+			s.incr("Found", 1)
 
 			// Skip leads without names
 			if lead.Name == "" {
-				stats.Skipped++
+				s.incr("Skipped", 1)
 				continue
 			}
 
@@ -151,7 +216,7 @@ func main() {
 				// Enrich all leads (ABR-Search has ABN, others lookup by name)
 				if err := enricher.Enrich(ctx, &lead); err != nil {
 					srcLogger.Error("Enrichment failed", "name", lead.Name, "abn", lead.ABN, "err", err)
-					stats.Error++
+					s.incr("Error", 1)
 					continue
 				}
 			}
@@ -165,15 +230,19 @@ func main() {
 			if isVet && isInv && isGst && isPrivate {
 				isNew, err := repo.SaveLead(ctx, lead)
 				if err != nil {
-					stats.Error++
-				} else if isNew {
-					stats.New++
-					srcLogger.Info("Saved new", "name", lead.Name, "age", lead.AgeYears())
+					srcLogger.Error("Save failed", "name", lead.Name, "err", err)
+					s.incr("Error", 1)
 				} else {
-					stats.Updated++
+					s.incr("Selected", 1)
+					if isNew {
+						s.incr("New", 1)
+						srcLogger.Info("Saved new", "name", lead.Name, "age", lead.AgeYears())
+					} else {
+						s.incr("Updated", 1)
+					}
 				}
 			} else {
-				stats.Skipped++
+				s.incr("Skipped", 1)
 				if *debug {
 					srcLogger.Debug("Skipped", "name", lead.Name, "vet", isVet, "inv", isInv, "gst", isGst, "private", isPrivate)
 				}
@@ -182,11 +251,12 @@ func main() {
 	}
 
 	logger.Info("Pipeline Complete",
-		"total_found", stats.Found,
-		"new", stats.New,
-		"updated", stats.Updated,
-		"skipped", stats.Skipped,
-		"errors", stats.Error)
+		"total_found", s.Found,
+		"selected", s.Selected,
+		"new", s.New,
+		"updated", s.Updated,
+		"skipped", s.Skipped,
+		"errors", s.Error)
 
 	requestedSources := strings.Split(strings.ToUpper(*sourcesFlag), ",")
 	if err := repo.ExportCSV(ctx, outPath, *targetAge, allowedStates, requestedSources); err != nil {
