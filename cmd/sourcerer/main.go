@@ -29,8 +29,8 @@ func generateCSVPath(sources, states string, age int, outDir string) string {
 }
 
 type stats struct {
-	Found, New, Updated, Skipped, Selected, Error int
-	mu                                            sync.Mutex
+	Found, Selected, New, Updated, Skipped, Error int
+	mu                                           sync.Mutex
 }
 
 func (s *stats) incr(field string, n int) {
@@ -39,14 +39,14 @@ func (s *stats) incr(field string, n int) {
 	switch field {
 	case "Found":
 		s.Found += n
+	case "Selected":
+		s.Selected += n
 	case "New":
 		s.New += n
 	case "Updated":
 		s.Updated += n
 	case "Skipped":
 		s.Skipped += n
-	case "Selected":
-		s.Selected += n
 	case "Error":
 		s.Error += n
 	}
@@ -228,18 +228,16 @@ func main() {
 			isPrivate := lead.IsPrivateEntity()
 
 			if isVet && isInv && isGst && isPrivate {
+				s.incr("Selected", 1)
 				isNew, err := repo.SaveLead(ctx, lead)
 				if err != nil {
 					srcLogger.Error("Save failed", "name", lead.Name, "err", err)
 					s.incr("Error", 1)
+				} else if isNew {
+					s.incr("New", 1)
+					srcLogger.Info("Saved new", "name", lead.Name, "age", lead.AgeYears())
 				} else {
-					s.incr("Selected", 1)
-					if isNew {
-						s.incr("New", 1)
-						srcLogger.Info("Saved new", "name", lead.Name, "age", lead.AgeYears())
-					} else {
-						s.incr("Updated", 1)
-					}
+					s.incr("Updated", 1)
 				}
 			} else {
 				s.incr("Skipped", 1)
