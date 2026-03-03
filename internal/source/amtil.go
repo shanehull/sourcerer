@@ -3,41 +3,34 @@ package source
 import (
 	"context"
 	"log/slog"
-	"math/rand"
 	"strings"
 	"time"
 
 	"github.com/gocolly/colly/v2"
+	app "github.com/lib4u/fake-useragent"
 	"github.com/shanehull/sourcerer/internal/model"
 )
 
 type AMTILScraper struct {
 	logger   *slog.Logger
 	startURL string
+	ua       *app.UserAgent
 }
 
 func NewAMTILScraper(logger *slog.Logger) *AMTILScraper {
 	return &AMTILScraper{
 		logger:   logger,
 		startURL: "https://amtil.com.au/directory/",
+		ua:       NewUserAgent(logger),
 	}
 }
 
 func (s *AMTILScraper) Name() string { return "AMTIL" }
 
-func getRandomUserAgent() string {
-	uas := []string{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-	}
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return uas[r.Intn(len(uas))]
-}
-
 func (s *AMTILScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 	var leads []model.Lead
 	c := colly.NewCollector(colly.AllowedDomains("amtil.com.au", "www.amtil.com.au"))
-	ua := getRandomUserAgent()
+	ua := GetRandomUserAgent(s.ua)
 
 	c.OnRequest(func(r *colly.Request) {
 		r.Headers.Set("User-Agent", ua)

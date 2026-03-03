@@ -25,6 +25,7 @@ require (
 	github.com/kennygrant/sanitize v1.2.4 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
+	github.com/lib4u/fake-useragent v1.0.6 // indirect
 	github.com/nlnwa/whatwg-url v0.6.2 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d // indirect

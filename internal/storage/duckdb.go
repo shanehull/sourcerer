@@ -161,9 +161,30 @@ func (r *DuckDBRepo) DeleteLeadByFilters(ctx context.Context, filters map[string
 		conditions = append(conditions, fmt.Sprintf("contains(upper(sources), '%s')", strings.ToUpper(source)))
 	}
 
+	if state, ok := filters["state"].(string); ok && state != "" {
+		conditions = append(conditions, "upper(state) = ?")
+		args = append(args, strings.ToUpper(state))
+	}
+
 	if entityType, ok := filters["entity_type"].(string); ok && entityType != "" {
 		conditions = append(conditions, "lower(entity_type) LIKE ?")
 		args = append(args, "%"+strings.ToLower(entityType)+"%")
+	}
+
+	if notGst, ok := filters["not_gst"].(bool); ok && notGst {
+		conditions = append(conditions, "gst_registered = false")
+	}
+
+	if notPriv, ok := filters["not_private"].(bool); ok && notPriv {
+		// Delete if entity_type contains: public company, government, sole trader, individual, other incorporated entity, trust
+		conditions = append(conditions, `(
+			lower(entity_type) LIKE '%public company%' OR
+			lower(entity_type) LIKE '%government%' OR
+			lower(entity_type) LIKE '%sole trader%' OR
+			lower(entity_type) LIKE '%individual%' OR
+			lower(entity_type) LIKE '%other incorporated entity%' OR
+			lower(entity_type) LIKE '%trust%'
+		)`)
 	}
 
 	if len(conditions) == 0 {
@@ -186,4 +207,24 @@ func (r *DuckDBRepo) Close() error {
 
 func (r *DuckDBRepo) GetDB() *sql.DB {
 	return r.db
+}
+
+func (r *DuckDBRepo) CountQualified(ctx context.Context, minAge int, allowedStates []string) (int, error) {
+	var stateFilter string
+	if len(allowedStates) > 0 {
+		stateList := "'" + strings.Join(allowedStates, "','") + "'"
+		stateFilter = fmt.Sprintf("AND upper(state) IN (%s)", strings.ToUpper(stateList))
+	}
+
+	// Just count all leads that pass basic filters
+	query := fmt.Sprintf(`
+		SELECT COUNT(*) FROM leads
+		WHERE gst_registered = true
+		AND is_current_entity = true
+		%s
+	`, stateFilter)
+
+	var count int
+	err := r.db.QueryRowContext(ctx, query).Scan(&count)
+	return count, err
 }
