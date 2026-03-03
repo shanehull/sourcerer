@@ -11,16 +11,37 @@ import (
 	"strings"
 	"time"
 
+	app "github.com/lib4u/fake-useragent"
 	"github.com/shanehull/sourcerer/internal/model"
 )
 
 type ABRClient struct {
-	guid   string
+	guid string
 	logger *slog.Logger
+	ua   *app.UserAgent
+	client *http.Client
 }
 
 func NewABRClient(guid string, logger *slog.Logger) *ABRClient {
-	return &ABRClient{guid: guid, logger: logger}
+	ua, err := app.New()
+	if err != nil {
+		logger.Error("Failed to initialize user agent", "err", err)
+	}
+	return &ABRClient{
+		guid: guid,
+		logger: logger,
+		ua: ua,
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (c *ABRClient) SearchByName(ctx context.Context, keyword string) ([]model.Lead, error) {
@@ -52,8 +73,15 @@ func (c *ABRClient) SearchByName(ctx context.Context, keyword string) ([]model.L
 	}
 	defer resp.Body.Close()
 
+	// Check HTTP status
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ABR API returned status %d: %s", resp.StatusCode, string(body[:min(len(body), 200)]))
+	}
+
 	var leads []model.Lead
 	decoder := xml.NewDecoder(resp.Body)
+	decoder.Strict = false // Be lenient with XML parsing
 
 	for {
 		t, err := decoder.Token()
@@ -61,7 +89,9 @@ func (c *ABRClient) SearchByName(ctx context.Context, keyword string) ([]model.L
 			break
 		}
 		if err != nil {
-			return nil, err
+			// Log the error but continue to handle partial responses
+			c.logger.Debug("XML parsing error during search", "keyword", keyword, "err", err)
+			break
 		}
 
 		switch se := t.(type) {

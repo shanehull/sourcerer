@@ -8,18 +8,21 @@ import (
 	"time"
 
 	"github.com/gocolly/colly/v2"
+	app "github.com/lib4u/fake-useragent"
 	"github.com/shanehull/sourcerer/internal/model"
 )
 
 type SEMMAScraper struct {
 	logger   *slog.Logger
 	startURL string
+	ua       *app.UserAgent
 }
 
 func NewSEMMAScraper(logger *slog.Logger) *SEMMAScraper {
 	return &SEMMAScraper{
 		logger:   logger,
 		startURL: "https://semma.com.au/directory/",
+		ua:       NewUserAgent(logger),
 	}
 }
 
@@ -30,7 +33,7 @@ func (s *SEMMAScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 	seen := make(map[string]bool)
 
 	c := colly.NewCollector(colly.AllowedDomains("semma.com.au", "www.semma.com.au"))
-	ua := getRandomUserAgent() // Re-using from amtil.go
+	ua := GetRandomUserAgent(s.ua)
 
 	c.OnRequest(func(r *colly.Request) {
 		r.Headers.Set("User-Agent", ua)

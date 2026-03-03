@@ -17,14 +17,17 @@ func main() {
 	abn := flag.String("abn", "", "Lead ABN to delete")
 	age := flag.Int("age", 0, "Lead age in years (for matching)")
 	source := flag.String("source", "", "Lead source (for matching)")
+	state := flag.String("state", "", "Lead state (for matching)")
 	entityType := flag.String("entity-type", "", "Lead entity type (for matching)")
+	gstOnly := flag.Bool("not-gst", false, "Delete leads NOT registered for GST")
+	notPrivate := flag.Bool("not-private", false, "Delete leads that are not private entities (public, government, sole trader, etc)")
 	dbPath := flag.String("db", "out/sourcing.duckdb", "Path to DuckDB file")
 	flag.Parse()
 
 	// Check if at least one filter flag was explicitly provided
 	hasFilters := false
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "name" || f.Name == "abn" || f.Name == "age" || f.Name == "source" || f.Name == "entity-type" {
+		if f.Name == "name" || f.Name == "abn" || f.Name == "age" || f.Name == "source" || f.Name == "state" || f.Name == "entity-type" || f.Name == "not-gst" || f.Name == "not-private" {
 			hasFilters = true
 		}
 	})
@@ -58,8 +61,18 @@ func main() {
 			}
 		case "source":
 			filters["source"] = *source
+		case "state":
+			filters["state"] = *state
 		case "entity-type":
 			filters["entity_type"] = *entityType
+		case "not-gst":
+			if *gstOnly {
+				filters["not_gst"] = true
+			}
+		case "not-private":
+			if *notPrivate {
+				filters["not_private"] = true
+			}
 		}
 	})
 

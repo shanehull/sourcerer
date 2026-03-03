@@ -57,7 +57,7 @@ func main() {
 	dbPath := flag.String("db", "out/sourcing.duckdb", "Path to DuckDB file")
 	statesRaw := flag.String("states", "", "States filter (comma-separated)")
 	postcodesRaw := flag.String("postcodes", "", "Postcode ranges")
-	sourcesFlag := flag.String("sources", "rto,amtil,semma,northlink,abr", "Sources to run")
+	sourcesFlag := flag.String("sources", "rto,amtil,semma,northlink,hobsonsbay,abr", "Sources to run")
 	keywordsRaw := flag.String("keywords", "", "ABR search keywords")
 	outDir := flag.String("outdir", "out", "Output directory for CSV and database")
 	debug := flag.Bool("debug", false, "Enable debug logs")
@@ -155,6 +155,9 @@ func main() {
 				srcLogger := logger.With("source", spec.name)
 				sources = append(sources, source.NewNorthLinkScraper(srcLogger, spec.url, spec.cat, spec.name))
 			}
+		case "hobsonsbay":
+			srcLogger := logger.With("source", "HobsonsBay")
+			sources = append(sources, source.NewHobsonsBayScraper(srcLogger))
 		case "abr":
 			srcLogger := logger.With("source", "ABR")
 			kws := strings.Split(*keywordsRaw, ",")
@@ -213,15 +216,14 @@ func main() {
 			if existing != nil {
 				lead = *existing
 			} else {
-				// Enrich all leads (ABR-Search has ABN, others lookup by name)
+				// Try to enrich, but don't fail if enrichment fails
 				if err := enricher.Enrich(ctx, &lead); err != nil {
-					srcLogger.Error("Enrichment failed", "name", lead.Name, "abn", lead.ABN, "err", err)
-					s.incr("Error", 1)
-					continue
+					srcLogger.Debug("Enrichment failed (non-fatal)", "name", lead.Name, "abn", lead.ABN, "err", err)
+					// Continue processing - enrichment is optional
 				}
 			}
 
-			// Core Filter Logic
+			// Core Filter Logic - only allow if enriched and meets criteria
 			isVet := lead.IsVeteran(*targetAge)
 			isInv := lead.IsInvestable(allowedStates, allowedPostcodes)
 			isGst := lead.IsGSTRegistered
@@ -241,16 +243,22 @@ func main() {
 				}
 			} else {
 				s.incr("Skipped", 1)
-				if *debug {
-					srcLogger.Debug("Skipped", "name", lead.Name, "vet", isVet, "inv", isInv, "gst", isGst, "private", isPrivate)
-				}
+				srcLogger.Debug("Skipped", "name", lead.Name, "age", lead.AgeYears(), "vet", isVet, "inv", isInv, "gst", isGst, "private", isPrivate, "state", lead.State, "entity_type", lead.EntityType, "current", lead.IsCurrentEntity)
 			}
 		}
 	}
 
+	// Count total qualified leads in database (after all inserts are done)
+	time.Sleep(100 * time.Millisecond) // Small delay to ensure DB is flushed
+	totalQualified, err := repo.CountQualified(ctx, *targetAge, allowedStates)
+	if err != nil {
+		logger.Error("Failed to count qualified leads", "err", err)
+		totalQualified = 0
+	}
+
 	logger.Info("Pipeline Complete",
 		"total_found", s.Found,
-		"selected", s.Selected,
+		"selected", totalQualified,
 		"new", s.New,
 		"updated", s.Updated,
 		"skipped", s.Skipped,
