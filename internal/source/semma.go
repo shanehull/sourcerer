@@ -4,6 +4,7 @@ import (
 	"context"
 	"html"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ func (s *SEMMAScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 	seen := make(map[string]bool)
 
 	c := colly.NewCollector(colly.AllowedDomains("semma.com.au", "www.semma.com.au"))
+	c.SetClient(&http.Client{Timeout: 60 * time.Second})
 	ua := GetRandomUserAgent(s.ua)
 
 	c.OnRequest(func(r *colly.Request) {

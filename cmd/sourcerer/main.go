@@ -100,10 +100,15 @@ func main() {
 		}
 	}
 
-	apiKey := os.Getenv("ABR_GUID")
-	if apiKey == "" {
+	abrGUID := os.Getenv("ABR_GUID")
+	if abrGUID == "" {
 		logger.Error("ABR_GUID environment variable not set")
 		os.Exit(1)
+	}
+
+	googleAPIKey := os.Getenv("GOOGLE_PLACES_API_KEY")
+	if googleAPIKey == "" {
+		logger.Warn("GOOGLE_PLACES_API_KEY environment variable not set, skipping Google Places enrichment")
 	}
 
 	repo, err := storage.NewDuckDBRepo(*dbPath, logger)
@@ -115,7 +120,11 @@ func main() {
 	ctx := context.Background()
 	repo.Init(ctx)
 
-	enricher := enrich.NewABRClient(apiKey, logger)
+	abrEnricher := enrich.NewABRClient(abrGUID, logger)
+	var googleEnricher *enrich.GooglePlacesClient
+	if googleAPIKey != "" {
+		googleEnricher = enrich.NewGooglePlacesClient(googleAPIKey, logger)
+	}
 
 	// Export-only mode: skip scraping and go straight to export
 	if *exportOnly {
@@ -161,7 +170,7 @@ func main() {
 		case "abr":
 			srcLogger := logger.With("source", "ABR")
 			kws := strings.Split(*keywordsRaw, ",")
-			sources = append(sources, source.NewABRSearchSource(srcLogger, enricher, kws))
+			sources = append(sources, source.NewABRSearchSource(srcLogger, abrEnricher, kws))
 		}
 	}
 
@@ -202,6 +211,7 @@ func main() {
 		}
 
 		srcLogger := logger.With("source", result.source.Name())
+		srcLogger.Info("Processing leads from source", "count", len(result.leads))
 		for _, lead := range result.leads {
 			s.incr("Found", 1)
 
@@ -216,10 +226,22 @@ func main() {
 			if existing != nil {
 				lead = *existing
 			} else {
-				// Try to enrich, but don't fail if enrichment fails
-				if err := enricher.Enrich(ctx, &lead); err != nil {
-					srcLogger.Debug("Enrichment failed (non-fatal)", "name", lead.Name, "abn", lead.ABN, "err", err)
+				// Try ABR enrichment, but don't fail if enrichment fails
+				if err := abrEnricher.Enrich(ctx, &lead); err != nil {
+					srcLogger.Debug("ABR enrichment failed (non-fatal)", "name", lead.Name, "abn", lead.ABN, "err", err)
 					// Continue processing - enrichment is optional
+				}
+			}
+
+			// Try Google Places enrichment if available and not already done
+			// (enrich both new and cached records that lack Google data)
+			if googleEnricher != nil && lead.Name != "" && lead.GooglePlacesID == "" {
+				srcLogger.Debug("Starting Google Places enrichment", "name", lead.Name)
+				if err := googleEnricher.Enrich(ctx, &lead); err != nil {
+					srcLogger.Debug("Google Places enrichment failed (non-fatal)", "name", lead.Name, "err", err)
+					// Continue processing - Google Places enrichment is optional
+				} else {
+					srcLogger.Debug("Google Places enrichment succeeded", "name", lead.Name, "place_id", lead.GooglePlacesID)
 				}
 			}
 
@@ -231,15 +253,17 @@ func main() {
 
 			if isVet && isInv && isGst && isPrivate {
 				s.incr("Selected", 1)
+				srcLogger.Debug("Saving lead", "name", lead.Name)
 				isNew, err := repo.SaveLead(ctx, lead)
 				if err != nil {
 					srcLogger.Error("Save failed", "name", lead.Name, "err", err)
 					s.incr("Error", 1)
 				} else if isNew {
 					s.incr("New", 1)
-					srcLogger.Info("Saved new", "name", lead.Name, "age", lead.AgeYears())
+					srcLogger.Info("Saved new", "name", lead.Name, "age", lead.AgeYears(), "google_place_id", lead.GooglePlacesID)
 				} else {
 					s.incr("Updated", 1)
+					srcLogger.Debug("Updated existing", "name", lead.Name, "google_place_id", lead.GooglePlacesID)
 				}
 			} else {
 				s.incr("Skipped", 1)

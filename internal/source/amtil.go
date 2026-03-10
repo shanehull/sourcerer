@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -29,7 +30,9 @@ func (s *AMTILScraper) Name() string { return "AMTIL" }
 
 func (s *AMTILScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 	var leads []model.Lead
+	
 	c := colly.NewCollector(colly.AllowedDomains("amtil.com.au", "www.amtil.com.au"))
+	c.SetClient(&http.Client{Timeout: 60 * time.Second})
 	ua := GetRandomUserAgent(s.ua)
 
 	c.OnRequest(func(r *colly.Request) {

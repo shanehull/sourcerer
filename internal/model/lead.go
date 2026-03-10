@@ -25,6 +25,17 @@ type Lead struct {
 	BusinessURL      string    // Actual business website URL
 	FoundAtURL       string    // URL where we found the lead (e.g., northlink.org.au/...)
 	EnrichmentError  error
+
+	// Google Places enrichment fields
+	GooglePlacesID       string  // Google Places place_id for future updates
+	GoogleFormattedName  string  // Formatted business name from Google
+	GooglePhone          string  // Phone number from Google Places
+	GoogleWebsite        string  // Website from Google Places
+	GoogleFormattedAddr  string  // Formatted full address from Google Places
+	GooglePrimaryType    string  // Primary business type classification
+	GoogleTypes          string  // All business types (comma-separated)
+	GoogleRating         float64 // Google rating (0-5)
+	GoogleRatingCount    int     // Number of ratings on Google
 }
 
 func (l *Lead) AgeYears() int {

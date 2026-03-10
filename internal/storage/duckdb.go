@@ -26,31 +26,7 @@ func NewDuckDBRepo(path string, logger *slog.Logger) (*DuckDBRepo, error) {
 }
 
 func (r *DuckDBRepo) Init(ctx context.Context) error {
-	query := `
-	CREATE TABLE IF NOT EXISTS leads (
-		abn TEXT PRIMARY KEY,
-		name TEXT,
-		category TEXT,
-		sources TEXT,
-		entity_type TEXT,
-		entity_status TEXT,
-		state TEXT,
-		postcode TEXT,
-		registration_date TIMESTAMP,
-		age_years INTEGER,
-		gst_registered BOOLEAN,
-		gst_effective_from TIMESTAMP,
-		is_current_entity BOOLEAN,
-		acn TEXT,
-		main_trading_name TEXT,
-		phone TEXT,
-		email TEXT,
-		business_url TEXT,
-		found_at_url TEXT,
-		updated_at TIMESTAMP
-	);`
-	_, err := r.db.ExecContext(ctx, query)
-	return err
+	return RunMigrations(ctx, r.db, r.logger)
 }
 
 // GetLeadByName checks if we already have an enriched lead by its name
@@ -78,8 +54,8 @@ func (r *DuckDBRepo) SaveLead(ctx context.Context, l model.Lead) (bool, error) {
 	ageYears := l.AgeYears()
 	
 	query := `
-	INSERT INTO leads (abn, name, category, sources, entity_type, entity_status, state, postcode, registration_date, age_years, gst_registered, gst_effective_from, is_current_entity, acn, main_trading_name, phone, email, business_url, found_at_url, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO leads (abn, name, category, sources, entity_type, entity_status, state, postcode, registration_date, age_years, gst_registered, gst_effective_from, is_current_entity, acn, main_trading_name, phone, email, business_url, found_at_url, google_places_id, google_formatted_name, google_phone, google_website, google_formatted_addr, google_primary_type, google_types, google_rating, google_rating_count, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT (abn) DO UPDATE SET
 		sources = CASE WHEN CONTAINS(leads.sources, EXCLUDED.sources) THEN leads.sources ELSE leads.sources || ',' || EXCLUDED.sources END,
 		age_years = EXCLUDED.age_years,
@@ -91,9 +67,18 @@ func (r *DuckDBRepo) SaveLead(ctx context.Context, l model.Lead) (bool, error) {
 		phone = EXCLUDED.phone,
 		email = EXCLUDED.email,
 		business_url = EXCLUDED.business_url,
+		google_places_id = EXCLUDED.google_places_id,
+		google_formatted_name = EXCLUDED.google_formatted_name,
+		google_phone = EXCLUDED.google_phone,
+		google_website = EXCLUDED.google_website,
+		google_formatted_addr = EXCLUDED.google_formatted_addr,
+		google_primary_type = EXCLUDED.google_primary_type,
+		google_types = EXCLUDED.google_types,
+		google_rating = EXCLUDED.google_rating,
+		google_rating_count = EXCLUDED.google_rating_count,
 		updated_at = EXCLUDED.updated_at;`
 
-	_, err := r.db.ExecContext(ctx, query, l.ABN, l.Name, l.Category, sourceStr, l.EntityType, l.EntityStatus, l.State, l.Postcode, l.RegistrationDate, ageYears, l.IsGSTRegistered, l.GSTEffectiveFrom, l.IsCurrentEntity, l.ACN, l.MainTradingName, l.Phone, l.Email, l.BusinessURL, l.FoundAtURL, time.Now())
+	_, err := r.db.ExecContext(ctx, query, l.ABN, l.Name, l.Category, sourceStr, l.EntityType, l.EntityStatus, l.State, l.Postcode, l.RegistrationDate, ageYears, l.IsGSTRegistered, l.GSTEffectiveFrom, l.IsCurrentEntity, l.ACN, l.MainTradingName, l.Phone, l.Email, l.BusinessURL, l.FoundAtURL, l.GooglePlacesID, l.GoogleFormattedName, l.GooglePhone, l.GoogleWebsite, l.GoogleFormattedAddr, l.GooglePrimaryType, l.GoogleTypes, l.GoogleRating, l.GoogleRatingCount, time.Now())
 	return !exists, err
 }
 
@@ -120,7 +105,7 @@ func (r *DuckDBRepo) ExportCSV(ctx context.Context, path string, minAge int, sta
 
 	query := fmt.Sprintf(`
 		COPY (
-			SELECT abn, name, category, entity_type, entity_status, sources, state, postcode, registration_date, age_years, gst_registered, gst_effective_from, is_current_entity, acn, main_trading_name, phone, email, business_url, found_at_url, updated_at 
+			SELECT abn, name, category, entity_type, entity_status, sources, state, postcode, registration_date, age_years, gst_registered, gst_effective_from, is_current_entity, acn, main_trading_name, phone, email, business_url, found_at_url, google_places_id, google_formatted_name, google_phone, google_website, google_formatted_addr, google_primary_type, google_types, google_rating, google_rating_count, updated_at 
 			FROM leads 
 			WHERE %s 
 			ORDER BY registration_date ASC

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ func (s *HobsonsBayScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 	c := colly.NewCollector(
 		colly.UserAgent(GetRandomUserAgent(s.ua)),
 	)
+	c.SetClient(&http.Client{Timeout: 60 * time.Second})
 
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*hobsonsbaybusiness.com.au*",

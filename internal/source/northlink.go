@@ -3,7 +3,9 @@ package source
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gocolly/colly/v2"
 	app "github.com/lib4u/fake-useragent"
@@ -32,11 +34,12 @@ func (s *NorthLinkScraper) Name() string { return s.source }
 
 func (s *NorthLinkScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 	var leads []model.Lead
+	
 	c := colly.NewCollector(
 		colly.AllowedDomains("northlink.org.au"),
-		// User Agent helps avoid basic bot detection on WordPress sites
 		colly.UserAgent(GetRandomUserAgent(s.ua)),
 	)
+	c.SetClient(&http.Client{Timeout: 60 * time.Second})
 
 	// TARGET: Only company headings that have both a title AND a link
 	// This filters out page headings like "Partnering with the Best..." which don't link to companies

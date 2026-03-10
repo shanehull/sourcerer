@@ -71,7 +71,7 @@ func (s *RTOScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", "https://training.gov.au/search")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 60 * time.Second}
 	s.logger.Info("Querying RTO API", "url", s.apiURL)
 
 	resp, err := client.Do(req)
