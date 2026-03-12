@@ -41,20 +41,20 @@ func (s *NorthLinkScraper) Fetch(ctx context.Context) ([]model.Lead, error) {
 	)
 	c.SetClient(&http.Client{Timeout: 60 * time.Second})
 
-	// TARGET: Only company headings that have both a title AND a link
-	// This filters out page headings like "Partnering with the Best..." which don't link to companies
-	c.OnHTML(".elementor-widget-heading", func(e *colly.HTMLElement) {
-		title := e.ChildAttr(".elementor-heading-title a", "href")
-		name := strings.TrimSpace(e.ChildText(".elementor-heading-title a"))
+	// TARGET: Company headings with links (h5 with elementor-heading-title class containing an <a> tag)
+	// This filters out page headings without links
+	c.OnHTML(".elementor-heading-title a", func(e *colly.HTMLElement) {
+		name := strings.TrimSpace(e.Text)
+		url := e.Attr("href")
 
 		// Only process if we have BOTH a name AND a URL link
-		// Page headings won't have links, only company entries do
-		if name != "" && len(name) > 2 && title != "" {
+		// Require minimum name length to avoid spurious entries
+		if name != "" && len(name) > 2 && url != "" {
 			leads = append(leads, model.Lead{
 				Name:        name,
 				Category:    s.category,
 				Sources:     []string{s.source},
-				BusinessURL: title,
+				BusinessURL: url,
 				FoundAtURL:  e.Request.URL.String(),
 			})
 		}

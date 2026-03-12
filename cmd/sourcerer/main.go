@@ -222,30 +222,14 @@ func main() {
 			}
 
 			// Check Cache
+			isNewLead := true
 			existing, _ := repo.GetLeadByName(ctx, lead.Name)
 			if existing != nil {
 				lead = *existing
-			} else {
-				// Try ABR enrichment, but don't fail if enrichment fails
-				if err := abrEnricher.Enrich(ctx, &lead); err != nil {
-					srcLogger.Debug("ABR enrichment failed (non-fatal)", "name", lead.Name, "abn", lead.ABN, "err", err)
-					// Continue processing - enrichment is optional
-				}
+				isNewLead = false
 			}
 
-			// Try Google Places enrichment if available and not already done
-			// (enrich both new and cached records that lack Google data)
-			if googleEnricher != nil && lead.Name != "" && lead.GooglePlacesID == "" {
-				srcLogger.Debug("Starting Google Places enrichment", "name", lead.Name)
-				if err := googleEnricher.Enrich(ctx, &lead); err != nil {
-					srcLogger.Debug("Google Places enrichment failed (non-fatal)", "name", lead.Name, "err", err)
-					// Continue processing - Google Places enrichment is optional
-				} else {
-					srcLogger.Debug("Google Places enrichment succeeded", "name", lead.Name, "place_id", lead.GooglePlacesID)
-				}
-			}
-
-			// Core Filter Logic - only allow if enriched and meets criteria
+			// Core Filter Logic - only enrich and save qualified leads
 			isVet := lead.IsVeteran(*targetAge)
 			isInv := lead.IsInvestable(allowedStates, allowedPostcodes)
 			isGst := lead.IsGSTRegistered
@@ -253,6 +237,25 @@ func main() {
 
 			if isVet && isInv && isGst && isPrivate {
 				s.incr("Selected", 1)
+
+				// Try ABR enrichment only for qualified leads
+				if lead.ABN == "" {
+					if err := abrEnricher.Enrich(ctx, &lead); err != nil {
+						srcLogger.Debug("ABR enrichment failed (non-fatal)", "name", lead.Name, "err", err)
+						// Continue processing - enrichment is optional
+					}
+				}
+
+				// Enrich Google Places only for qualified leads (saves API quota)
+				if (isNewLead || lead.GooglePlacesID == "") && googleEnricher != nil && lead.Name != "" {
+					srcLogger.Debug("Starting Google Places enrichment", "name", lead.Name)
+					if err := googleEnricher.Enrich(ctx, &lead); err != nil {
+						srcLogger.Debug("Google Places enrichment failed (non-fatal)", "name", lead.Name, "err", err)
+					} else {
+						srcLogger.Debug("Google Places enrichment succeeded", "name", lead.Name, "place_id", lead.GooglePlacesID)
+					}
+				}
+
 				srcLogger.Debug("Saving lead", "name", lead.Name)
 				isNew, err := repo.SaveLead(ctx, lead)
 				if err != nil {
